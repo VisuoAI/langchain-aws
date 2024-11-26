@@ -37,6 +37,10 @@ from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
+from tenacity import retry, stop_after_attempt, wait_exponential, before
+from dotenv import load_dotenv
+
+load_dotenv()
 
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"
 GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAssessment"
@@ -45,6 +49,33 @@ ASSISTANT_PROMPT = "\n\nAssistant:"
 ALTERNATION_ERROR = (
     "Error: Prompt must alternate between '\n\nHuman:' and '\n\nAssistant:'."
 )
+
+max_retries = int(os.getenv("MAX_RETRIES", 100))
+initial_backoff = int(os.getenv("INITIAL_BACKOFF", 45))
+
+
+@retry(
+    stop=stop_after_attempt(max_retries),
+    wait=wait_exponential(multiplier=initial_backoff, min=initial_backoff),
+    reraise=True,
+    before=lambda retry_state: logging.info(
+        f"Attempt {retry_state.attempt_number}/{max_retries}: Attempting to invoke model with request options."
+    ),
+)
+def invoke_with_retry(client, request_options):
+    """
+    Invoke the model with retry mechanism using exponential backoff.
+
+    Args:
+        client: The AWS Bedrock client.
+        request_options: The options for the invoke_model_with_response_stream request.
+
+    Returns:
+        The response from the Bedrock service.
+    """
+    response = client.invoke_model_with_response_stream(**request_options)
+    logging.info("Model invocation successful.")
+    return response
 
 
 def _add_newlines_before_ha(input_text: str) -> str:
@@ -959,10 +990,9 @@ class BedrockBase(BaseLanguageModel, ABC):
                 request_options["trace"] = "ENABLED"
 
         try:
-            response = self.client.invoke_model_with_response_stream(**request_options)
-
+            response = invoke_with_retry(self.client, request_options)
         except Exception as e:
-            logging.error(f"Error raised by bedrock service: {e}")
+            logging.error(f"Error raised by bedrock service after retries: {e}")
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e
