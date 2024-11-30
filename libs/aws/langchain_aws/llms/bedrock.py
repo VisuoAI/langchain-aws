@@ -38,9 +38,6 @@ from langchain_aws.utils import (
     get_token_ids_anthropic,
 )
 from tenacity import retry, stop_after_attempt, wait_exponential, before
-from dotenv import load_dotenv
-
-load_dotenv()
 
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"
 GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAssessment"
@@ -50,8 +47,8 @@ ALTERNATION_ERROR = (
     "Error: Prompt must alternate between '\n\nHuman:' and '\n\nAssistant:'."
 )
 
-max_retries = int(os.getenv("MAX_RETRIES", 100))
-initial_backoff = int(os.getenv("INITIAL_BACKOFF", 45))
+max_retries = 100
+initial_backoff = 55
 
 
 @retry(
